@@ -1,4 +1,3 @@
-__all__ = ["CParser", "PythonParser"]
+__all__ = ["CParser"]
 
 from .c_parser import CParser
-from .python_parser import PythonParser

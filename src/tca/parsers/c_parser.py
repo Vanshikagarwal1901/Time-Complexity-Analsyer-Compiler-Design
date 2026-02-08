@@ -3,15 +3,13 @@ from __future__ import annotations
 import re
 from typing import List, Optional, Tuple
 
-from ..ast_nodes import Block, Loop, Program
-
-
-TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|\d+|==|!=|<=|>=|\+\+|--|\+=|-=|\*=|/=|\+|\-|\*|/|=|<|>|\(|\)|\{|\}|;|,")
+from ..ast_nodes import Block, Function, Loop, Program
+from ..lexer import CLexer
 
 
 class CParser:
     def parse(self, code: str) -> Program:
-        tokens = TOKEN_RE.findall(code)
+        tokens = CLexer().tokenize(code)
         block, _ = self._parse_block(tokens, 0, stop_token=None)
         return Program(body=block)
 
@@ -29,6 +27,11 @@ class CParser:
                 loop, i = self._parse_while(tokens, i)
                 block.statements.append(loop)
                 continue
+            if self._looks_like_function(tokens, i):
+                func, i = self._parse_function(tokens, i)
+                if func is not None:
+                    block.statements.append(func)
+                continue
             if tok == "{":
                 _, i = self._parse_block(tokens, i + 1, stop_token="}")
                 continue
@@ -41,7 +44,7 @@ class CParser:
         header, i = self._collect_until(tokens, i, ")")
         init, cond, update = self._split_for_header(header)
         bound = self._infer_for_bound(cond, update)
-        body, i = self._parse_loop_body(tokens, i)
+        body, i, _ = self._parse_loop_body(tokens, i)
         return Loop(kind="for", bound=bound, body=body), i
 
     def _parse_while(self, tokens: List[str], i: int) -> Tuple[Loop, int]:
@@ -66,9 +69,22 @@ class CParser:
         body_tokens, next_i = self._collect_until(tokens, i, ";")
         return Block(), next_i, body_tokens
 
+    def _parse_function(self, tokens: List[str], i: int) -> Tuple[Optional[Function], int]:
+        name = tokens[i + 1]
+        i = i + 2
+        i = self._expect(tokens, i, "(")
+        _, i = self._collect_until(tokens, i, ")")
+        if i >= len(tokens) or tokens[i] != "{":
+            i = self._skip_statement(tokens, i)
+            return None, i
+        body, i = self._parse_block(tokens, i + 1, stop_token="}")
+        return Function(name=name, body=body), i
+
     def _infer_for_bound(self, cond: List[str], update: List[str]) -> str:
         if self._is_mul_update(update) or self._is_div_update(update):
             return "log"
+        if self._is_sqrt_condition(cond):
+            return "sqrt"
         if self._mentions_variable(cond):
             return "linear"
         return "unknown"
@@ -79,6 +95,8 @@ class CParser:
             return "unknown"
         update = self._find_update_in_tokens(body_tokens, var)
         if update in {"inc", "dec"}:
+            if self._is_sqrt_condition(cond, var):
+                return "sqrt"
             return "linear"
         if update in {"mul", "div"}:
             return "log"
@@ -89,6 +107,39 @@ class CParser:
             if re.match(r"[A-Za-z_]", tok):
                 return tok
         return None
+
+    def _is_sqrt_condition(self, cond: List[str], var: Optional[str] = None) -> bool:
+        if not self._has_comparator(cond):
+            return False
+        for i in range(len(cond) - 2):
+            if cond[i + 1] != "*":
+                continue
+            left = cond[i]
+            right = cond[i + 2]
+            if left != right:
+                continue
+            if not self._is_identifier(left):
+                continue
+            if var is not None and left != var:
+                continue
+            return True
+        return False
+
+    def _has_comparator(self, tokens: List[str]) -> bool:
+        return any(tok in {"<", ">", "<=", ">=", "==", "!="} for tok in tokens)
+
+    def _looks_like_function(self, tokens: List[str], i: int) -> bool:
+        if i + 3 >= len(tokens):
+            return False
+        if not self._is_identifier(tokens[i]) or not self._is_identifier(tokens[i + 1]):
+            return False
+        if tokens[i + 2] != "(":
+            return False
+        _, j = self._collect_until(tokens, i + 3, ")")
+        return j < len(tokens) and tokens[j] == "{"
+
+    def _is_identifier(self, token: str) -> bool:
+        return re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", token) is not None
 
     def _find_update_in_tokens(self, tokens: List[str], var: str) -> Optional[str]:
         for i, tok in enumerate(tokens):
@@ -109,16 +160,22 @@ class CParser:
         return False
 
     def _is_mul_update(self, tokens: List[str]) -> bool:
-        return "*=" in tokens or self._contains_pattern(tokens, "*", "=")
+        return "*=" in tokens or self._has_operator_after_equals(tokens, "*")
 
     def _is_div_update(self, tokens: List[str]) -> bool:
-        return "/=" in tokens or self._contains_pattern(tokens, "/", "=")
+        return "/=" in tokens or self._has_operator_after_equals(tokens, "/")
 
     def _contains_pattern(self, tokens: List[str], a: str, b: str) -> bool:
         for i in range(len(tokens) - 1):
             if tokens[i] == a and tokens[i + 1] == b:
                 return True
         return False
+
+    def _has_operator_after_equals(self, tokens: List[str], op: str) -> bool:
+        if "=" not in tokens:
+            return False
+        eq_index = tokens.index("=")
+        return op in tokens[eq_index + 1 :]
 
     def _split_for_header(self, header: List[str]) -> Tuple[List[str], List[str], List[str]]:
         parts: List[List[str]] = [[], [], []]

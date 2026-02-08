@@ -28,7 +28,9 @@ def loop_complexity(loop: Loop) -> Complexity:
     if bound == "constant":
         base = Complexity()
     elif bound == "linear":
-        base = Complexity(degree=1)
+        base = Complexity(degree_num=1)
+    elif bound == "sqrt":
+        base = Complexity(degree_num=1, degree_den=2)
     elif bound == "log":
         base = Complexity(log_power=1)
     else:

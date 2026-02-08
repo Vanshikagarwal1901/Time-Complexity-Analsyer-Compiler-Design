@@ -5,7 +5,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
 
 from ..analyzer import analyze_program
-from ..parsers import CParser, PythonParser
+from ..parsers import CParser
+from ..semantic import analyze_semantics
 
 
 HTML = """<!doctype html>
@@ -25,11 +26,8 @@ HTML = """<!doctype html>
   <h1>Time Complexity Analyzer</h1>
   <div class="box">
     <div class="row">
-      <label for="lang">Language:</label>
-      <select id="lang">
-        <option value="py">Python</option>
-        <option value="c">C/C++</option>
-      </select>
+      <label>Language:</label>
+      <span>Mini-C (C/C++)</span>
       <button onclick="analyze()">Analyze</button>
     </div>
     <textarea id="code" placeholder="Paste code here..."></textarea>
@@ -39,14 +37,12 @@ HTML = """<!doctype html>
   </div>
 <script>
 async function analyze() {
-  const lang = document.getElementById('lang').value;
   const code = document.getElementById('code').value;
   const form = new URLSearchParams();
-  form.set('lang', lang);
   form.set('code', code);
   const res = await fetch('/analyze', { method: 'POST', body: form });
   const data = await res.json();
-  document.getElementById('result').textContent = data.complexity || 'O(?)';
+  document.getElementById('result').textContent = data.error || data.complexity || 'O(?)';
 }
 </script>
 </body>
@@ -69,14 +65,14 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length).decode("utf-8")
         data = parse_qs(body)
-        lang = (data.get("lang") or ["py"])[0]
         code = (data.get("code") or [""])[0]
-        if lang in {"c", "cpp"}:
-            program = CParser().parse(code)
+        program = CParser().parse(code)
+        errors = analyze_semantics(program)
+        if errors:
+          payload = json.dumps({"error": errors[0]}).encode("utf-8")
         else:
-            program = PythonParser().parse(code)
-        complexity = str(analyze_program(program))
-        payload = json.dumps({"complexity": complexity}).encode("utf-8")
+          complexity = str(analyze_program(program))
+          payload = json.dumps({"complexity": complexity}).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))

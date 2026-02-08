@@ -4,14 +4,14 @@ import argparse
 from pathlib import Path
 
 from .analyzer import analyze_program
-from .parsers import CParser, PythonParser
+from .parsers import CParser
+from .semantic import analyze_semantics
 from .web.server import run_server
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Time complexity analyzer")
     parser.add_argument("--file", type=str, help="Path to input file")
-    parser.add_argument("--lang", type=str, default="auto", choices=["auto", "c", "cpp", "py"])
     parser.add_argument("--web", action="store_true", help="Run minimal web UI")
     args = parser.parse_args()
 
@@ -24,19 +24,12 @@ def main() -> None:
 
     path = Path(args.file)
     code = path.read_text(encoding="utf-8")
-    lang = args.lang
-    if lang == "auto":
-        if path.suffix in {".c", ".h"}:
-            lang = "c"
-        elif path.suffix in {".cpp", ".cc", ".hpp"}:
-            lang = "cpp"
-        else:
-            lang = "py"
-
-    if lang in {"c", "cpp"}:
-        program = CParser().parse(code)
-    else:
-        program = PythonParser().parse(code)
+    program = CParser().parse(code)
+    errors = analyze_semantics(program)
+    if errors:
+        for err in errors:
+            print(f"Semantic error: {err}")
+        raise SystemExit(1)
 
     complexity = analyze_program(program)
     print(str(complexity))
