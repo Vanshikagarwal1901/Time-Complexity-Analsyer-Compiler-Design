@@ -1,0 +1,91 @@
+=== Lexical Analysis ===
+Tokens:
+#   kind         value           line:col
+  1 PREPROCESSOR #include <s... 1:1
+  2 TYPE         int            3:1
+  3 IDENTIFIER   main           3:5
+  4 SYMBOL       (              3:9
+  5 SYMBOL       )              3:10
+  6 SYMBOL       {              3:12
+  7 TYPE         int            4:5
+  8 IDENTIFIER   x              4:9
+  9 OPERATOR     =              4:11
+ 10 NUMBER       10             4:13
+ 11 SYMBOL       ;              4:15
+ 12 TYPE         int            5:5
+ 13 IDENTIFIER   x              5:9
+ 14 OPERATOR     =              5:11
+ 15 NUMBER       20             5:13
+ 16 SYMBOL       ;              5:15
+ 17 IDENTIFIER   y              6:5
+ 18 OPERATOR     =              6:7
+ 19 IDENTIFIER   x              6:9
+ 20 OPERATOR     +              6:11
+ 21 NUMBER       1              6:13
+ 22 SYMBOL       ;              6:14
+ 23 TYPE         int            7:5
+ 24 IDENTIFIER   value          7:9
+ 25 OPERATOR     =              7:15
+ 26 STRING       "abc"          7:17
+ 27 SYMBOL       ;              7:22
+ 28 KEYWORD      return         8:5
+ 29 NUMBER       0              8:12
+ 30 SYMBOL       ;              8:13
+ 31 SYMBOL       }              9:1
+
+=== Syntax Analysis ===
+No syntax errors detected.
+
+=== Semantic Analysis ===
+[ERROR] Semantic Analysis at 5:9 - Multiple declaration of variable 'x'.
+  Suggestion: Rename one declaration of 'x' or remove duplicate.
+[ERROR] Semantic Analysis at 6:1 - Undeclared variable 'y' used in assignment.
+  Suggestion: Declare 'y' before assignment.
+[ERROR] Semantic Analysis at 7:1 - Type mismatch: cannot assign 'char*' to 'int' variable 'value'.
+  Suggestion: Use a compatible type or cast explicitly.
+
+=== Intermediate Code (Three Address Code) ===
+  1. FUNC_BEGIN main ; function main entry
+  2. = 10 x ; assign@4
+  3. = 20 x ; assign@5
+  4. = x + 1 y ; assign@6
+  5. = "abc" value ; assign@7
+  6. RETURN 0 ; return@8
+  7. FUNC_END ; function exit
+
+=== Optimization ===
+Applied Optimizations:
+- Dead Code Elimination: removed unused assignment to 'y'.
+- Dead Code Elimination: removed unused assignment to 'value'.
+
+Before Optimization:
+  FUNC_BEGIN main ; function main entry
+  = 10 x ; assign@4
+  = 20 x ; assign@5
+  = x + 1 y ; assign@6
+  = "abc" value ; assign@7
+  RETURN 0 ; return@8
+  FUNC_END ; function exit
+After Optimization:
+  FUNC_BEGIN main ; function main entry
+  = 10 x ; assign@4
+  = 20 x ; assign@5
+  RETURN 0 ; return@8
+  FUNC_END ; function exit
+
+=== Code Generation (Pseudo Assembly) ===
+main:
+  PUSH BP
+  MOV BP, SP
+  MOV R1, 10
+  MOV R1, 20
+  MOV R0, 0
+  RET
+  MOV SP, BP
+  POP BP
+  RET
+
+=== Time Complexity ===
+Final Complexity: O(1)
+Derivation Steps:
+- Final time complexity: O(1).

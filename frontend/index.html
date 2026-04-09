@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Compiler + Complexity Analyzer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="bg-orb orb-a"></div>
+  <div class="bg-orb orb-b"></div>
+
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">C+</div>
+        <div>
+          <h1>Compiler + Complexity Analyzer</h1>
+          <p>Lexing to Codegen, with step-by-step Big-O derivation</p>
+        </div>
+      </div>
+      <div class="pill-row">
+        <span class="pill">C99</span>
+        <span class="pill">C++17</span>
+        <span class="pill accent">AST + CFG</span>
+      </div>
+    </header>
+
+    <section class="workspace-grid">
+      <article class="panel input-panel">
+        <div class="panel-head">
+          <h2>Source Code</h2>
+          <div class="actions">
+            <select id="sampleSelect" aria-label="Load sample">
+              <option value="">Load sample...</option>
+              <optgroup label="Searching">
+                <option value="linear">Linear Search O(n)</option>
+                <option value="binary">Binary Search O(log n)</option>
+                <option value="jump">Jump Search O(√n)</option>
+              </optgroup>
+              <optgroup label="Sorting">
+                <option value="bubble">Bubble Sort O(n²)</option>
+                <option value="selection">Selection Sort O(n²)</option>
+                <option value="insertion">Insertion Sort O(n²)</option>
+                <option value="merge">Merge Sort O(n log n)</option>
+                <option value="quick">Quick Sort O(n log n)</option>
+              </optgroup>
+              <optgroup label="Recursion - Linear">
+                <option value="factorial">Factorial O(n)</option>
+                <option value="sum_recursive">Sum Recursive O(n)</option>
+                <option value="power">Power O(n)</option>
+              </optgroup>
+              <optgroup label="Recursion - Logarithmic">
+                <option value="power_log">Power Log O(log n)</option>
+                <option value="gcd">GCD O(log n)</option>
+              </optgroup>
+              <optgroup label="Recursion - Exponential">
+                <option value="fibrec">Fibonacci O(2^n)</option>
+                <option value="tribonacci">Tribonacci O(3^n)</option>
+              </optgroup>
+              <optgroup label="Loop Patterns">
+                <option value="nested">Nested (Linear×Log) O(n log n)</option>
+                <option value="triangular">Triangular O(n²)</option>
+                <option value="triple_nested">Triple Nested O(n³)</option>
+                <option value="triple_mixed">Triple Mixed O(n² log n)</option>
+                <option value="triple_triangular">Triple Triangular O(n⁴)</option>
+              </optgroup>
+              <optgroup label="Constant Time">
+                <option value="const_simple">Simple Assignment O(1)</option>
+                <option value="const_fixed_loop">Fixed Loop O(1)</option>
+                <option value="const_three_ops">Fixed Operations O(1)</option>
+              </optgroup>
+              <optgroup label="Optimization Demo">
+                <option value="optimization_demo">Constant Folding + Dead Code + Simplify O(1)</option>
+              </optgroup>
+            </select>
+            <button id="clearBtn" class="ghost" type="button">Clear</button>
+            <button id="analyzeBtn" class="primary">Analyze</button>
+          </div>
+        </div>
+        <textarea id="sourceInput" spellcheck="false"></textarea>
+        <div class="editor-hint">Tip: Press Ctrl+Enter to run analysis.</div>
+        <div class="status-row">
+          <span id="statusText">Ready</span>
+          <span class="dot" id="statusDot"></span>
+        </div>
+      </article>
+
+      <article class="panel summary-panel">
+        <div class="panel-head">
+          <h2>Summary</h2>
+        </div>
+        <div id="summaryCards" class="summary-cards">
+          <div class="summary-empty">Click Analyze to run all phases.</div>
+        </div>
+      </article>
+    </section>
+
+    <div class="results-toolbar">
+      <button id="expandAllBtn" class="ghost mini-btn" type="button">Expand All</button>
+      <button id="collapseAllBtn" class="ghost mini-btn" type="button">Collapse All</button>
+    </div>
+
+    <section class="results-stack" id="resultsStack">
+      <article class="panel phase-panel">
+        <h3>Lexical Analysis</h3>
+        <pre id="lexicalOut" class="output-box">No output yet.</pre>
+      </article>
+      <article class="panel phase-panel">
+        <h3>Syntax Analysis</h3>
+        <pre id="syntaxOut" class="output-box">No output yet.</pre>
+      </article>
+      <article class="panel phase-panel">
+        <h3>Parse Tree Visualization</h3>
+        <div id="parseTreeOut" class="output-box parse-tree-box">No output yet.</div>
+      </article>
+      <article class="panel phase-panel">
+        <h3>Semantic Analysis</h3>
+        <pre id="semanticOut" class="output-box">No output yet.</pre>
+      </article>
+      <article class="panel phase-panel">
+        <h3>Intermediate Code</h3>
+        <pre id="irOut" class="output-box">No output yet.</pre>
+      </article>
+      <article class="panel phase-panel">
+        <h3>Optimization</h3>
+        <pre id="optOut" class="output-box">No output yet.</pre>
+      </article>
+      <article class="panel phase-panel">
+        <h3>Code Generation</h3>
+        <pre id="codegenOut" class="output-box">No output yet.</pre>
+      </article>
+      <article class="panel phase-panel highlight">
+        <h3>Time Complexity</h3>
+        <pre id="complexityOut" class="output-box">No output yet.</pre>
+      </article>
+    </section>
+
+    <section class="panel analytics-panel" id="analyticsPanel">
+      <div class="panel-head">
+        <h2>Visual Analytics</h2>
+      </div>
+      <div class="analytics-grid">
+        <article class="viz-card">
+          <div class="viz-head">
+            <h3>Dependency Graph</h3>
+            <div class="viz-actions">
+              <button class="ghost mini-btn export-btn" type="button" data-viz="dependency" data-format="svg">SVG</button>
+              <button class="ghost mini-btn export-btn" type="button" data-viz="dependency" data-format="png">PNG</button>
+              <button class="ghost mini-btn export-btn" type="button" data-viz="dependency" data-format="json">JSON</button>
+            </div>
+          </div>
+          <div id="dependencyViz" class="viz-box">Run analysis to generate dependency graph.</div>
+        </article>
+
+        <article class="viz-card">
+          <div class="viz-head">
+            <h3>Recursion Tree</h3>
+            <div class="viz-actions">
+              <button class="ghost mini-btn export-btn" type="button" data-viz="recursion" data-format="svg">SVG</button>
+              <button class="ghost mini-btn export-btn" type="button" data-viz="recursion" data-format="png">PNG</button>
+              <button class="ghost mini-btn export-btn" type="button" data-viz="recursion" data-format="json">JSON</button>
+            </div>
+          </div>
+          <div id="recursionViz" class="viz-box">Run analysis to generate recursion tree.</div>
+        </article>
+
+        <article class="viz-card">
+          <div class="viz-head">
+            <h3>Complexity Profile</h3>
+            <div class="viz-actions">
+              <button class="ghost mini-btn export-btn" type="button" data-viz="complexity" data-format="svg">SVG</button>
+              <button class="ghost mini-btn export-btn" type="button" data-viz="complexity" data-format="png">PNG</button>
+              <button class="ghost mini-btn export-btn" type="button" data-viz="complexity" data-format="json">JSON</button>
+            </div>
+          </div>
+          <div id="complexityViz" class="viz-box">Run analysis to generate complexity profile.</div>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
