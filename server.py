@@ -474,12 +474,12 @@ class AnalyzerHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    host = "127.0.0.1"
-    port = 8000
+    import os
+    host = "0.0.0.0"
+    port = int(os.environ.get("PORT", 8000))
     server = ThreadingHTTPServer((host, port), AnalyzerHandler)
     print(f"Server running at http://{host}:{port}")
     server.serve_forever()
-
-
+    
 if __name__ == "__main__":
     main()
