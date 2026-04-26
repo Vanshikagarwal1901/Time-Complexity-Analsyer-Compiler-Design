@@ -375,9 +375,13 @@ textarea::-webkit-scrollbar-thumb {
 
   .analytics-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
     padding: 12px;
+  }
+
+  .viz-card:first-child {
+    grid-column: 1 / -1;
   }
 
   .viz-card {
@@ -407,7 +411,7 @@ textarea::-webkit-scrollbar-thumb {
   }
 
   .viz-box {
-    min-height: 290px;
+    min-height: 360px;
     padding: 8px;
     color: var(--muted);
     font-size: 0.82rem;
@@ -460,6 +464,13 @@ textarea::-webkit-scrollbar-thumb {
     fill: #dbf3ff;
   }
 
+  .dep-edge-label {
+    fill: #ffd39e;
+    font-size: 11px;
+    font-family: var(--mono);
+    font-weight: 700;
+  }
+
   .rec-edge {
     stroke: rgba(70, 209, 183, 0.45);
     stroke-width: 1.2;
@@ -479,6 +490,20 @@ textarea::-webkit-scrollbar-thumb {
 
   .rec-node.rec-d3 {
     fill: rgba(255, 185, 116, 0.88);
+  }
+
+  .rec-level-label {
+    fill: rgba(157, 225, 210, 0.92);
+    font-size: 11px;
+    font-family: var(--mono);
+  }
+
+  .rec-steps {
+    margin: 8px 0 0;
+    padding-left: 18px;
+    color: #a3c4d4;
+    font-size: 0.76rem;
+    line-height: 1.5;
   }
 
   .cmp-title {

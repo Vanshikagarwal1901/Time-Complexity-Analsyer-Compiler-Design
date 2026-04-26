@@ -17,6 +17,7 @@ const panels = {
   syntaxOut: document.getElementById("syntaxOut"),
   parseTreeOut: document.getElementById("parseTreeOut"),
   semanticOut: document.getElementById("semanticOut"),
+  suggestionOut: document.getElementById("suggestionOut"),
   irOut: document.getElementById("irOut"),
   optOut: document.getElementById("optOut"),
   codegenOut: document.getElementById("codegenOut"),
@@ -166,11 +167,67 @@ function renderResult(result) {
   panels.lexicalOut.textContent = result.lexical || "No lexical output.";
   panels.syntaxOut.textContent = result.syntax || "No syntax output.";
   renderParseTree3D(result.parse_tree || "No parse tree output.");
-  panels.semanticOut.textContent = result.guided_feedback || result.semantic || "No semantic output.";
+  panels.semanticOut.textContent = result.semantic || "No semantic output.";
+  panels.suggestionOut.textContent = buildSuggestionOutput(result);
   panels.irOut.textContent = result.ir || "No IR output.";
   panels.optOut.textContent = result.optimization || "No optimization output.";
   panels.codegenOut.textContent = result.codegen || "No code generation output.";
   panels.complexityOut.textContent = result.complexity_detail || result.complexity || "No complexity output.";
+}
+
+function buildSuggestionOutput(result) {
+  const suggestedCode = String(result.suggested_code || "").trim();
+  const suggestedKind = String(result.suggested_code_kind || "none");
+  const optimizationText = String(result.optimization || "");
+  const hasOptimization = optimizationText && optimizationText !== "No optimizations." && optimizationText !== "No optimization rule was applicable.";
+  const hasSemanticIssues = Number(result.semantic_error_count || 0) > 0 || Number(result.semantic_warning_count || 0) > 0 || Number(result.syntax_error_count || 0) > 0;
+
+  if (suggestedCode) {
+    if (suggestedKind === "source-fix") {
+      return [
+        "Corrected Source (from semantic/syntax guidance):",
+        suggestedCode,
+      ].join("\n\n");
+    }
+
+    if (suggestedKind === "optimized-code") {
+      return [
+        "Suggested Optimized Code:",
+        suggestedCode,
+      ].join("\n\n");
+    }
+
+    return suggestedCode;
+  }
+
+  const legacyExtract = extractSuggestedCodeFromGuidedFeedback(result.guided_feedback || "");
+  if (legacyExtract) {
+    return [
+      "Corrected Source (from semantic/syntax guidance):",
+      legacyExtract,
+    ].join("\n\n");
+  }
+
+  if (hasOptimization) {
+    return [
+      "Optimization is present, but no direct source rewrite is available.",
+      "See Optimization and Code Generation panels for transformed output.",
+    ].join("\n");
+  }
+
+  if (hasSemanticIssues) {
+    return "Semantic/syntax issues found, but no automatic code rewrite was generated.";
+  }
+
+  return "No suggestion needed: code is already valid and no optimization rewrite is available.";
+}
+
+function extractSuggestedCodeFromGuidedFeedback(feedback) {
+  const marker = "Suggested Corrected Version:";
+  const idx = feedback.indexOf(marker);
+  if (idx < 0) return "";
+  const block = feedback.slice(idx + marker.length).trim();
+  return block;
 }
 
 function renderFallback(source, errorText) {
@@ -188,6 +245,7 @@ function renderFallback(source, errorText) {
   panels.syntaxOut.textContent = "Error: " + errorText;
   panels.parseTreeOut.textContent = "Parse tree panel is connected and ready for backend payload.";
   panels.semanticOut.textContent = "Next step: expose Python analyzer through an HTTP endpoint.";
+  panels.suggestionOut.textContent = "Suggested corrected code will appear here when semantic fixes or optimization suggestions are available.";
   panels.irOut.textContent = "IR panel is connected and ready for backend payload.";
   panels.optOut.textContent = "Optimization panel is connected and ready for backend payload.";
   panels.codegenOut.textContent = "Codegen panel is connected and ready for backend payload.";
@@ -358,12 +416,11 @@ function buildDependencyData(source) {
   const functions = extractFunctionBodies(source);
   const nodeNames = Object.keys(functions);
   const nodeSet = new Set(nodeNames);
-  const edges = [];
+  const edgeCountByPair = new Map();
   const recursiveCallCounts = {};
 
   for (const [name, info] of Object.entries(functions)) {
     const calls = info.body.match(/\b([A-Za-z_][A-Za-z0-9_]*)\s*\(/g) || [];
-    const seen = new Set();
     recursiveCallCounts[name] = 0;
     for (const call of calls) {
       const callee = call.replace(/\s*\($/, "").trim();
@@ -371,11 +428,18 @@ function buildDependencyData(source) {
       if (!nodeSet.has(callee)) continue;
       if (callee === name) recursiveCallCounts[name] += 1;
       const id = `${name}->${callee}`;
-      if (seen.has(id)) continue;
-      seen.add(id);
-      edges.push({ from: name, to: callee });
+      edgeCountByPair.set(id, (edgeCountByPair.get(id) || 0) + 1);
     }
   }
+
+  const edges = Array.from(edgeCountByPair.entries()).map(([id, count]) => {
+    const split = id.split("->");
+    return {
+      from: split[0],
+      to: split[1],
+      count,
+    };
+  });
 
   const sccGroups = computeSccGroups(nodeNames, edges);
   const groupByNode = {};
@@ -520,20 +584,28 @@ function buildRecursionData(dependencyData) {
   let callCount = dependencyData.recursiveCallCounts[primary] || 0;
   if (mode === "indirect") {
     const groupSet = new Set(cycleMembers);
-    callCount = dependencyData.edges.filter((edge) => groupSet.has(edge.from) && groupSet.has(edge.to)).length;
+    const internalEdges = dependencyData.edges.filter((edge) => groupSet.has(edge.from) && groupSet.has(edge.to));
+    const outByNode = new Map();
+    for (const edge of internalEdges) {
+      const prev = outByNode.get(edge.from) || 0;
+      outByNode.set(edge.from, prev + 1);
+    }
+    callCount = Math.max(1, ...outByNode.values());
   }
 
-  const branching = Math.max(1, Math.min(3, callCount || 1));
-  const maxDepth = branching === 1 ? 7 : 5;
+  const branching = Math.max(1, Math.min(4, callCount || 1));
+  const maxDepth = branching === 1 ? 9 : branching === 2 ? 7 : branching === 3 ? 6 : 5;
   const levels = [];
 
-  let total = 0;
   for (let depth = 0; depth <= maxDepth; depth++) {
-    const count = Math.pow(branching, depth);
-    levels.push({ depth, count });
-    total += count;
-    if (total > 130) break;
+    const count = branching === 1 ? 1 : Math.pow(branching, depth);
+    const shownCount = Math.min(36, count);
+    levels.push({ depth, count, shownCount });
   }
+
+  const estimatedNodes = branching === 1
+    ? levels.length
+    : Math.round((Math.pow(branching, levels.length) - 1) / (branching - 1));
 
   return {
     mode,
@@ -541,7 +613,7 @@ function buildRecursionData(dependencyData) {
     cycleMembers,
     levels,
     branching,
-    estimatedNodes: total,
+    estimatedNodes,
   };
 }
 
@@ -602,11 +674,12 @@ function renderDependencySvg(container, data) {
     return;
   }
 
-  const width = 740;
-  const height = 300;
+  const width = 980;
+  const height = 460;
   const centerX = width / 2;
   const centerY = height / 2;
-  const radius = Math.min(width, height) / 2 - 56;
+  const radius = Math.min(width, height) / 2 - 84;
+  const nodeRadius = data.nodes.length > 12 ? 20 : 24;
 
   const cycleNodes = new Set(data.recursiveGroups.flat());
   const cycleArray = data.nodes.filter((node) => cycleNodes.has(node.id));
@@ -623,12 +696,14 @@ function renderDependencySvg(container, data) {
 
   cycleArray.forEach((node, idx) => {
     const angle = (Math.PI * 2 * idx) / Math.max(cycleArray.length, 1) - Math.PI / 2;
-    const cycleRadius = Math.max(48, radius * 0.5);
+    const cycleRadius = Math.max(64, radius * 0.56);
     positions[node.id] = {
       x: centerX + cycleRadius * Math.cos(angle),
       y: centerY + cycleRadius * Math.sin(angle),
     };
   });
+
+  const maxEdgeCount = Math.max(...data.edges.map((edge) => edge.count || 1), 1);
 
   const edgeSvg = data.edges
     .map((edge, idx) => {
@@ -636,12 +711,30 @@ function renderDependencySvg(container, data) {
       const b = positions[edge.to];
       if (!a || !b) return "";
       const edgeClass = edge.inCycle ? "dep-edge dep-edge-cycle" : "dep-edge";
+      const edgeWidth = 1.6 + ((edge.count || 1) / maxEdgeCount) * 1.6;
 
       if (edge.from === edge.to) {
-        return `<path d="M ${a.x - 16} ${a.y - 18} C ${a.x + 25} ${a.y - 55}, ${a.x + 60} ${a.y - 10}, ${a.x + 20} ${a.y + 10}" class="dep-loop dep-edge-cycle" marker-end="url(#arrow-${idx})"/>`;
+        return `<path d="M ${a.x - 16} ${a.y - 18} C ${a.x + 25} ${a.y - 55}, ${a.x + 60} ${a.y - 10}, ${a.x + 20} ${a.y + 10}" class="dep-loop dep-edge-cycle" style="stroke-width:${edgeWidth}" marker-end="url(#arrow-${idx})"/>`;
       }
 
-      return `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" class="${edgeClass}" marker-end="url(#arrow-${idx})"/>`;
+      return `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" class="${edgeClass}" style="stroke-width:${edgeWidth}" marker-end="url(#arrow-${idx})"/>`;
+    })
+    .join("");
+
+  const edgeLabels = data.edges
+    .map((edge) => {
+      if ((edge.count || 1) <= 1) return "";
+      const a = positions[edge.from];
+      const b = positions[edge.to];
+      if (!a || !b) return "";
+
+      if (edge.from === edge.to) {
+        return `<text x="${a.x + 52}" y="${a.y - 26}" class="dep-edge-label">x${edge.count}</text>`;
+      }
+
+      const midX = (a.x + b.x) / 2;
+      const midY = (a.y + b.y) / 2;
+      return `<text x="${midX}" y="${midY - 6}" text-anchor="middle" class="dep-edge-label">x${edge.count}</text>`;
     })
     .join("");
 
@@ -655,7 +748,7 @@ function renderDependencySvg(container, data) {
       const nodeClass = cycleNodes.has(node.id) ? "dep-node dep-node-cycle" : "dep-node";
       return [
         `<g class="${nodeClass}">`,
-        `<circle cx="${pos.x}" cy="${pos.y}" r="26"></circle>`,
+        `<circle cx="${pos.x}" cy="${pos.y}" r="${nodeRadius}"></circle>`,
         `<text x="${pos.x}" y="${pos.y + 4}" text-anchor="middle">${escapeXml(node.id)}</text>`,
         `</g>`,
       ].join("");
@@ -665,14 +758,16 @@ function renderDependencySvg(container, data) {
   const cycleSummary = data.recursiveGroups.length
     ? `, ${data.recursiveGroups.length} recursive cluster${data.recursiveGroups.length > 1 ? "s" : ""}`
     : "";
+  const totalCallSites = data.edges.reduce((sum, edge) => sum + (edge.count || 1), 0);
 
   container.innerHTML = `
     <svg class="viz-svg" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dependency graph">
       <defs>${defs}</defs>
       ${edgeSvg}
+      ${edgeLabels}
       ${nodeSvg}
     </svg>
-    <div class="viz-caption">${data.nodes.length} functions, ${data.edges.length} call edges${cycleSummary}.</div>
+    <div class="viz-caption">${data.nodes.length} functions, ${data.edges.length} unique call edges, ${totalCallSites} call sites${cycleSummary}.</div>
   `;
 }
 
@@ -682,51 +777,84 @@ function renderRecursionSvg(container, data) {
     return;
   }
 
-  const width = 740;
-  const height = 280;
+  const width = 980;
+  const height = 460;
   const levels = data.levels;
-  const maxCount = Math.max(...levels.map((l) => l.count), 1);
-
-  const nodes = [];
+  const levelNodes = [];
   const lines = [];
+  const depthLabels = [];
 
   levels.forEach((level) => {
-    const y = 30 + (level.depth * (height - 60)) / Math.max(levels.length - 1, 1);
-    for (let i = 0; i < level.count; i++) {
-      if (level.count > 36) break;
-      const x = 30 + ((i + 1) * (width - 60)) / (level.count + 1);
-      nodes.push({ depth: level.depth, x, y });
+    const y = 40 + (level.depth * (height - 92)) / Math.max(levels.length - 1, 1);
+    depthLabels.push(`<text x="14" y="${y + 4}" class="rec-level-label">d=${level.depth} (${formatCount(level.count)})</text>`);
+    const row = [];
+    for (let i = 0; i < level.shownCount; i++) {
+      const x = 108 + ((i + 1) * (width - 140)) / (level.shownCount + 1);
+      row.push({ depth: level.depth, x, y, index: i });
     }
+    levelNodes.push(row);
   });
 
-  for (let i = 0; i < nodes.length; i++) {
-    const node = nodes[i];
-    const children = nodes.filter((candidate) => candidate.depth === node.depth + 1);
-    if (!children.length || node.depth >= levels.length - 1) continue;
+  for (let depth = 0; depth < levelNodes.length - 1; depth++) {
+    const parents = levelNodes[depth];
+    const children = levelNodes[depth + 1];
+    if (!parents.length || !children.length) continue;
 
-    const budget = Math.min(data.branching, children.length);
-    const step = Math.max(1, Math.floor(children.length / budget));
-    for (let j = 0; j < budget; j++) {
-      const child = children[Math.min(children.length - 1, j * step)];
-      lines.push(`<line x1="${node.x}" y1="${node.y}" x2="${child.x}" y2="${child.y}" class="rec-edge"/>`);
+    for (let i = 0; i < parents.length; i++) {
+      const parent = parents[i];
+      const start = Math.floor((i * children.length) / parents.length);
+      const end = Math.floor(((i + 1) * children.length) / parents.length) - 1;
+      const first = Math.max(0, Math.min(children.length - 1, start));
+      const last = Math.max(first, Math.min(children.length - 1, end));
+      let drawn = 0;
+
+      for (let childIdx = first; childIdx <= last && drawn < data.branching; childIdx++) {
+        const child = children[childIdx];
+        lines.push(`<line x1="${parent.x}" y1="${parent.y}" x2="${child.x}" y2="${child.y}" class="rec-edge"/>`);
+        drawn += 1;
+      }
+
+      if (drawn === 0) {
+        const child = children[first];
+        lines.push(`<line x1="${parent.x}" y1="${parent.y}" x2="${child.x}" y2="${child.y}" class="rec-edge"/>`);
+      }
     }
   }
 
+  const nodes = levelNodes.flat();
+
   const circles = nodes
-    .map((node) => `<circle cx="${node.x}" cy="${node.y}" r="5" class="rec-node rec-d${node.depth % 4}"></circle>`)
+    .map((node) => `<circle cx="${node.x}" cy="${node.y}" r="6" class="rec-node rec-d${node.depth % 4}"></circle>`)
     .join("");
 
   const descriptor = data.mode === "indirect"
     ? `Indirect recursion cluster: ${data.cycleMembers.map((item) => escapeXml(item)).join(" -> ")}`
     : `${escapeXml(data.functionName)} direct recursion`;
 
+  const shownNodes = nodes.length;
+  const deepest = levels[levels.length - 1] || { depth: 0, count: 1 };
+  const levelRows = levels
+    .slice(0, 8)
+    .map((level) => `<li>Depth ${level.depth}: ${formatCount(level.count)} call${level.count === 1 ? "" : "s"}</li>`)
+    .join("");
+
+  const levelDetail = levelRows
+    ? `<ul class="rec-steps">${levelRows}</ul>`
+    : "";
+
   container.innerHTML = `
     <svg class="viz-svg" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Recursion tree">
+      ${depthLabels.join("")}
       ${lines.join("")}
       ${circles}
     </svg>
-    <div class="viz-caption">${descriptor}, branching factor ${data.branching}, approx ${data.estimatedNodes} calls.</div>
+    <div class="viz-caption">${descriptor}, branching factor ${data.branching}, depth ${deepest.depth}, approx ${formatCount(data.estimatedNodes)} calls (${formatCount(shownNodes)} nodes shown).</div>
+    ${levelDetail}
   `;
+}
+
+function formatCount(value) {
+  return Number(value || 0).toLocaleString();
 }
 
 function renderComplexitySvg(container, data) {
